@@ -31,5 +31,10 @@ jobs:
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.io"
         git config --global user.addSafeDirectory '*'
-        git add playlist.m3u
-        git diff --quiet && git diff --cached --quiet || (git commit -m "M3U liste güncellendi: $(date +'%Y-%m-%d')" && git push)
+        
+        if [ -f playlist.m3u ]; then
+          git add playlist.m3u
+          git diff --quiet && git diff --cached --quiet || (git commit -m "M3U liste güncellendi: $(date +'%Y-%m-%d')" && git push)
+        else
+          echo "⚠️ playlist.m3u dosyası oluşturulamadı, işlem atlanıyor."
+        fi
