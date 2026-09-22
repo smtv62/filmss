@@ -1,415 +1,126 @@
 import json
 import time
-from urllib.parse import urljoin
-
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 
 
-BASE_URL = "https://www.fullhdfilmizlesene.now"
+def get_stream_url_with_playwright(page, detail_url):
+  """Playwright kullanarak detay sayfasını açar ve ağ trafiğinden m3u8 linkini yakalar."""
+  stream_url = ''
 
-START_URL = (
-    "https://www.fullhdfilmizlesene.now/"
-    "filmizle/turkce-dublaj-filmler-1"
-)
+  def handle_request(request):
+    nonlocal stream_url
+    if '.m3u8' in request.url or 'cdnimages' in request.url:
+      if not stream_url and 'vtt' not in request.url:
+        stream_url = request.url
 
-OUTPUT_FILE = "movies.json"
+  page.on('request', handle_request)
 
+  try:
+    print(f'   -> Detay sayfasına gidiliyor: {detail_url}')
+    page.goto(detail_url, timeout=60000)
+    time.sleep(3)
+  except Exception as e:
+    print(f'   -> Sayfa yüklenme hatası: {e}')
 
-def make_absolute_url(url):
-    if not url:
-        return ""
-
-    return urljoin(BASE_URL, url)
-
-
-def get_poster(movie):
-
-    picture = movie.find("picture")
-
-    if picture:
-
-        img = picture.find("img")
-
-        if img:
-
-            for attr in [
-                "data-src",
-                "data-lazy-src",
-                "data-original",
-                "src"
-            ]:
-
-                value = img.get(attr)
-
-                if value:
-                    return make_absolute_url(value)
-
-    img = movie.find("img")
-
-    if img:
-
-        for attr in [
-            "data-src",
-            "data-lazy-src",
-            "data-original",
-            "src"
-        ]:
-
-            value = img.get(attr)
-
-            if value:
-                return make_absolute_url(value)
-
-    return ""
-
-
-def parse_movie(movie):
-
-    a_tag = movie.select_one("a.tt")
-
-    if not a_tag:
-        return None
-
-    link = a_tag.get("href", "")
-
-    if not link:
-        return None
-
-    title = a_tag.get_text(
-        " ",
-        strip=True
-    )
-
-    if title.lower().endswith(" izle"):
-        title = title[:-5].strip()
-
-    year_element = movie.select_one(".film-yil")
-
-    year = ""
-
-    if year_element:
-        year = year_element.get_text(
-            " ",
-            strip=True
-        )
-
-    imdb_element = movie.select_one(".imdb")
-
-    imdb = ""
-
-    if imdb_element:
-        imdb = imdb_element.get_text(
-            " ",
-            strip=True
-        )
-
-    genre_element = movie.select_one(".ktt")
-
-    genre = ""
-
-    if genre_element:
-        genre = genre_element.get_text(
-            " ",
-            strip=True
-        )
-
-    quality_element = movie.select_one(".uhd")
-
-    quality = ""
-
-    if quality_element:
-        quality = quality_element.get_text(
-            " ",
-            strip=True
-        )
-
-    language_element = movie.select_one(".tur")
-
-    language = ""
-
-    if language_element:
-
-        language = (
-            language_element.get("title")
-            or language_element.get_text(
-                " ",
-                strip=True
-            )
-        )
-
-    return {
-        "title": title,
-        "link": make_absolute_url(link),
-        "poster": get_poster(movie),
-        "year": year,
-        "imdb": imdb,
-        "genre": genre,
-        "language": language,
-        "quality": quality,
-        "stream_url": ""
-    }
+  page.remove_listener('request', handle_request)
+  return stream_url
 
 
 def main():
-
-    movies = []
-
-    with sync_playwright() as p:
-
-        print("=" * 60)
-        print("FULLHD FILM GENERATOR")
-        print("=" * 60)
-
-        browser = p.chromium.launch(
-
-            # REPLIT / LINUX SERVER
-            headless=True,
-
-            args=[
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-blink-features=AutomationControlled",
-                "--disable-gpu"
-            ]
-        )
-
-        context = browser.new_context(
-
-            viewport={
-                "width": 1920,
-                "height": 1080
-            },
-
-            user_agent=(
-                "Mozilla/5.0 "
-                "(Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 "
-                "(KHTML, like Gecko) "
-                "Chrome/122.0.0.0 "
-                "Safari/537.36"
-            ),
-
-            locale="tr-TR"
-        )
-
-        page = context.new_page()
-
-        print("\nSite açılıyor...")
-
-        try:
-
-            response = page.goto(
-                START_URL,
-                wait_until="domcontentloaded",
-                timeout=60000
-            )
-
-            if response:
-                print(
-                    "HTTP:",
-                    response.status
-                )
-
-        except Exception as e:
-
-            print(
-                "Site açılırken hata:"
-            )
-
-            print(e)
-
-            browser.close()
-            return
-
-        print(
-            "Sayfanın yüklenmesi bekleniyor..."
-        )
-
-        try:
-
-            page.wait_for_selector(
-                "ul.list li.film",
-                timeout=30000
-            )
-
-        except Exception as e:
-
-            print(
-                "Film selector bulunamadı:"
-            )
-
-            print(e)
-
-        # Dinamik içerik için bekle
-        page.wait_for_timeout(5000)
-
-        print(
-            "Sayfa başlığı:",
-            page.title()
-        )
-
-        print(
-            "Sayfa URL:",
-            page.url
-        )
-
-        # --------------------------------------------------
-        # Film sayısını doğrudan Playwright ile kontrol et
-        # --------------------------------------------------
-
-        film_count = page.locator(
-            "ul.list li.film"
-        ).count()
-
-        print(
-            "\nBulunan film kartı:",
-            film_count
-        )
-
-        # --------------------------------------------------
-        # Film yoksa HTML kaydet
-        # --------------------------------------------------
-
-        if film_count == 0:
-
-            print(
-                "\nFilm bulunamadı!"
-            )
-
-            with open(
-                "debug.html",
-                "w",
-                encoding="utf-8"
-            ) as f:
-
-                f.write(
-                    page.content()
-                )
-
-            print(
-                "debug.html oluşturuldu."
-            )
-
-            browser.close()
-            return
-
-        # --------------------------------------------------
-        # BeautifulSoup
-        # --------------------------------------------------
-
-        html = page.content()
-
-        soup = BeautifulSoup(
-            html,
-            "html.parser"
-        )
-
-        film_elements = soup.select(
-            "ul.list li.film"
-        )
-
-        print(
-            "\nFilm bilgileri çıkarılıyor..."
-        )
-
-        # --------------------------------------------------
-        # Filmleri işle
-        # --------------------------------------------------
-
-        for index, movie in enumerate(
-            film_elements,
-            start=1
-        ):
-
-            try:
-
-                data = parse_movie(movie)
-
-                if not data:
-                    continue
-
-                movies.append(data)
-
-                print(
-                    f"\n[{index}/{len(film_elements)}]"
-                )
-
-                print(
-                    "Film:",
-                    data["title"]
-                )
-
-                print(
-                    "URL:",
-                    data["link"]
-                )
-
-                print(
-                    "Poster:",
-                    data["poster"]
-                )
-
-                print(
-                    "Yıl:",
-                    data["year"]
-                )
-
-                print(
-                    "IMDb:",
-                    data["imdb"]
-                )
-
-                print(
-                    "Tür:",
-                    data["genre"]
-                )
-
-                print(
-                    "Kalite:",
-                    data["quality"]
-                )
-
-            except Exception as e:
-
-                print(
-                    f"Film işleme hatası: {e}"
-                )
-
-        browser.close()
-
-    # ------------------------------------------------------
-    # JSON
-    # ------------------------------------------------------
-
-    with open(
-        OUTPUT_FILE,
-        "w",
-        encoding="utf-8"
-    ) as f:
-
-        json.dump(
-            movies,
-            f,
-            ensure_ascii=False,
-            indent=4
-        )
-
-    print("\n")
-    print("=" * 60)
-    print("İŞLEM TAMAMLANDI")
-    print("=" * 60)
-
-    print(
-        "Toplam film:",
-        len(movies)
+  base_url = 'https://www.fullhdfilmizlesene.now/filmizle/turkce-dublaj-filmler-1'
+  movies_data = []
+
+  with sync_playwright() as p:
+    # Bot korumalarını atlatmak için gerçekçi tarayıcı ayarları ve headless=False (görünür) yapıyoruz
+    browser = p.chromium.launch(
+        headless=False,
+        args=[
+            '--disable-blink-features=AutomationControlled',
+            '--start-maximized',
+        ],
     )
 
-    print(
-        "Dosya:",
-        OUTPUT_FILE
+    # Gerçek bir tarayıcı gibi görünmesi için context ve user-agent tanımlayalım
+    context = browser.new_context(
+        user_agent=(
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,'
+            ' like Gecko) Chrome/122.0.0.0 Safari/537.36'
+        ),
+        viewport={'width': 1920, 'height': 1080},
     )
+    page = context.new_page()
+
+    print('Liste sayfası taranıyor...')
+    try:
+      page.goto(base_url, timeout=60000)
+      # İçeriğin ve filmlerin DOM'a basılması için biraz daha uzun bekleyelim
+      print(
+          'Sayfanın yüklenmesi bekleniyor (görsel ekranda gözlenebilir)...'
+      )
+      page.wait_for_selector(
+          'li.film', timeout=15000
+      )  # li.film görünene kadar bekle
+      html_content = page.content()
+    except Exception as e:
+      print(f'Liste sayfası yüklenemedi veya seçici bulunamadı: {e}')
+      browser.close()
+      return
+
+    soup = BeautifulSoup(html_content, 'html.parser')
+
+    movies = soup.select('li.film')
+    print(f'Başarılı! Toplam {len(movies)} film kutusu bulundu.')
+
+    # Test amaçlı ilk 3 filmi işleyelim
+    for movie in movies[:3]:
+      a_tag = movie.find('a', class_='tt')
+      if not a_tag:
+        continue
+
+      link = a_tag.get('href')
+      if link and not link.startswith('http'):
+        link = 'https://www.fullhdfilmizlesene.now' + link
+
+      title = a_tag.text.strip()
+
+      img_tag = movie.find('img')
+      img_url = ''
+      if img_tag:
+        img_url = (
+            img_tag.get('data-src')
+            or img_tag.get('src')
+            or img_tag.get('data-lazy-src')
+            or ''
+        )
+
+      print(f'\nFilm: {title}')
+      print(f'Link: {link}')
+      print(f'Afiş: {img_url}')
+
+      stream_url = ''
+      if link:
+        stream_url = get_stream_url_with_playwright(page, link)
+        print(f'Yakalanan Stream URL: {stream_url}')
+
+      movies_data.append({
+          'title': title,
+          'link': link,
+          'poster': img_url,
+          'stream_url': stream_url,
+      })
+
+    browser.close()
+
+  # JSON dosyasına kaydet
+  with open('movies.json', 'w', encoding='utf-8') as f:
+    json.dump(movies_data, f, ensure_ascii=False, indent=4)
+
+  print(
+      '\nİşlem tamam! Veriler movies.json dosyasına yazıldı. Toplam işlenen:'
+      f' {len(movies_data)}'
+  )
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+  main()
