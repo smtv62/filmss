@@ -23,7 +23,6 @@ def get_stream_url_with_playwright(page, detail_url):
   except Exception as e:
     print(f'   -> Sayfa yüklenme hatası: {e}')
 
-  # Dinleyiciyi kaldır ki sonraki sayfada karışıklık olmasın
   page.remove_listener('request', handle_request)
   return stream_url
 
@@ -39,9 +38,8 @@ def main():
     print('Liste sayfası taranıyor...')
     try:
       page.goto(base_url, timeout=60000)
-      page.wait_for_selector(
-          'div, article', timeout=10000
-      )  # İçeriğin yüklenmesini bekle
+      # Sayfanın dinamik içeriklerinin yüklenmesi için ağın sakinleşmesini bekleyelim
+      page.wait_for_load_state('networkidle')
       html_content = page.content()
     except Exception as e:
       print(f'Liste sayfası yüklenemedi: {e}')
@@ -50,28 +48,23 @@ def main():
 
     soup = BeautifulSoup(html_content, 'html.parser')
 
-    # Sitedeki olası film kartı kapsayıcılarını esnek bir şekilde arıyoruz
-    movies = soup.find_all('div', class_='box-item')
-    if not movies:
-      movies = soup.find_all('article')
-    if not movies:
-      # Alternatif olarak film linki barındıran kutuları yakalayalım
-      movies = soup.select('.film-box, .box, .item, .movie-item')
+    # Sınıf adı aramak yerine doğrudan /film/ içeren tüm bağlantıları akıllıca yakalayalım
+    seen_links = set()
+    movies = []
 
-    print(f'Toplam {len(movies)} film kutusu bulundu.')
+    for a_tag in soup.find_all('a', href=True):
+      href = a_tag['href']
+      # Film detay linklerinin yapısını yakalıyoruz (içinde /film/ geçenler)
+      if '/film/' in href and href not in seen_links:
+        seen_links.add(href)
 
-    # Test amaçlı ilk 3 filmi işleyelim
-    for movie in movies[:3]:
-      title_tag = movie.find('a')
-      if title_tag:
-        title = title_tag.get('title') or title_tag.text.strip()
-        link = title_tag.get('href')
+        title = a_tag.get('title') or a_tag.text.strip()
+        # Eğer başlık boş geldiyse veya çok kısa ise atlayabiliriz
+        if not title or len(title) < 2:
+          continue
 
-        # Eğer link göreceli (relative) geldiyse tam adrese çevirelim
-        if link and not link.startswith('http'):
-          link = 'https://www.fullhdfilmizlesene.now' + link
-
-        img_tag = movie.find('img')
+        parent = a_tag.find_parent('div') or a_tag
+        img_tag = parent.find('img') if parent else a_tag.find('img')
         img_url = ''
         if img_tag:
           img_url = (
@@ -81,20 +74,34 @@ def main():
               or ''
           )
 
-        print(f'\nFilm: {title}')
-        print(f'Link: {link}')
+        movies.append({'title': title, 'link': href, 'poster': img_url})
 
-        stream_url = ''
-        if link:
-          stream_url = get_stream_url_with_playwright(page, link)
-          print(f'Yakalanan Stream URL: {stream_url}')
+    print(f'Akıllı filtre ile toplam {len(movies)} film bağlantısı bulundu.')
 
-        movies_data.append({
-            'title': title,
-            'link': link,
-            'poster': img_url,
-            'stream_url': stream_url,
-        })
+    # Test amaçlı ilk 3 filmi işleyelim
+    for movie_info in movies[:3]:
+      title = movie_info['title']
+      link = movie_info['link']
+      img_url = movie_info['poster']
+
+      # Eğer link göreceli (relative) geldiyse tam adrese çevirelim
+      if link and not link.startswith('http'):
+        link = 'https://www.fullhdfilmizlesene.now' + link
+
+      print(f'\nFilm: {title}')
+      print(f'Link: {link}')
+
+      stream_url = ''
+      if link:
+        stream_url = get_stream_url_with_playwright(page, link)
+        print(f'Yakalanan Stream URL: {stream_url}')
+
+      movies_data.append({
+          'title': title,
+          'link': link,
+          'poster': img_url,
+          'stream_url': stream_url,
+      })
 
     browser.close()
 
@@ -103,7 +110,7 @@ def main():
     json.dump(movies_data, f, ensure_ascii=False, indent=4)
 
   print(
-      '\nİşlem tamam! Veriler movies.json dosyasına yazıldı. Toplam film:'
+      '\nİşlem tamam! Veriler movies.json dosyasına yazıldı. Toplam işlenen:'
       f' {len(movies_data)}'
   )
 
