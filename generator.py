@@ -2,9 +2,10 @@ import json
 import time
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
+from playwright_stealth import stealth_sync
 
 
-def get_stream_url_with_playwright(page, detail_url):
+def get_stream_url_with_page(page, detail_url):
   """Playwright kullanarak detay sayfasını açar ve ağ trafiğinden m3u8 linkini yakalar."""
   stream_url = ''
 
@@ -44,21 +45,22 @@ def main():
 
     context = browser.new_context(
         user_agent=(
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,'
-            ' like Gecko) Chrome/122.0.0.0 Safari/537.36'
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            ' (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
         ),
         viewport={'width': 1920, 'height': 1080},
     )
     page = context.new_page()
 
+    # Cloudflare ve bot korumalarını atlatmak için stealth modunu uyguluyoruz
+    stealth_sync(page)
+
     print('Liste sayfası taranıyor...')
     try:
       page.goto(base_url, timeout=60000)
-      # Sayfanın tamamen yüklenmesi için ağ etkinliğinin durulmasını bekleyelim
-      page.wait_for_load_state('domcontentloaded')
+      # Cloudflare doğrulamasını geçmesi için biraz daha geniş soluklu bekleyelim
       time.sleep(6)
 
-      # Sayfa başlığını yazdırarak bot korumasına takılıp takılmadığımızı görelim
       page_title = page.title()
       print(f'Gezinilen Sayfa Başlığı: {page_title}')
 
@@ -73,7 +75,7 @@ def main():
     movies = soup.select('li.film')
     print(f'Toplam {len(movies)} film kutusu bulundu.')
 
-    # Eğer hala 0 film buluyorsa, sayfayı debug.html olarak kaydedelim
+    # Eğer hala 0 film buluyorsa debug için kaydedelim
     if len(movies) == 0:
       with open('debug.html', 'w', encoding='utf-8') as f:
         f.write(html_content)
@@ -110,7 +112,7 @@ def main():
 
       stream_url = ''
       if link:
-        stream_url = get_stream_url_with_playwright(page, link)
+        stream_url = get_stream_url_with_page(page, link)
         print(f'Yakalanan Stream URL: {stream_url}')
 
       movies_data.append({
