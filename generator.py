@@ -38,22 +38,22 @@ def main():
     print('Liste sayfası taranıyor...')
     try:
       page.goto(base_url, timeout=60000)
-      page.wait_for_selector('ul.list li.film', timeout=10000)
+      time.sleep(5)  # Sayfanın tam oturması için kısa bir bekleme
       html_content = page.content()
     except Exception as e:
-      print(f'Liste sayfası yüklenemedi veya seçici bulunamadı: {e}')
+      print(f'Liste sayfası yüklenemedi: {e}')
       browser.close()
       return
 
     soup = BeautifulSoup(html_content, 'html.parser')
 
-    # Doğrudan ekranda gördüğümüz li.film öğelerini seçiyoruz
-    movies = soup.select('ul.list li.film')
-    print(f'Doğru seçici ile toplam {len(movies)} film kutusu bulundu.')
+    # Doğrudan li.film kutularını seçiyoruz
+    movies = soup.select('li.film')
+    print(f'Toplam {len(movies)} film kutusu bulundu.')
 
     # Test amaçlı ilk 3 filmi işleyelim
     for movie in movies[:3]:
-      # Film linki ve başlığı a.tt içinde
+      # Link ve başlık a.tt etiketinden alınır
       a_tag = movie.find('a', class_='tt')
       if not a_tag:
         continue
@@ -64,7 +64,7 @@ def main():
 
       title = a_tag.text.strip()
 
-      # Afiş resmi picture veya img etiketinden alınır
+      # Afiş resmi li.film içindeki picture veya img etiketinden taranır
       img_tag = movie.find('img')
       img_url = ''
       if img_tag:
