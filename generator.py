@@ -19,7 +19,7 @@ def get_stream_url_with_playwright(page, detail_url):
   try:
     print(f'   -> Detay sayfasına gidiliyor: {detail_url}')
     page.goto(detail_url, timeout=60000)
-    time.sleep(3)  # Oynatıcının ve isteklerin yüklenmesi için bekleme
+    time.sleep(3)
   except Exception as e:
     print(f'   -> Sayfa yüklenme hatası: {e}')
 
@@ -38,55 +38,40 @@ def main():
     print('Liste sayfası taranıyor...')
     try:
       page.goto(base_url, timeout=60000)
-      # Sayfanın dinamik içeriklerinin yüklenmesi için ağın sakinleşmesini bekleyelim
-      page.wait_for_load_state('networkidle')
+      page.wait_for_selector('ul.list li.film', timeout=10000)
       html_content = page.content()
     except Exception as e:
-      print(f'Liste sayfası yüklenemedi: {e}')
+      print(f'Liste sayfası yüklenemedi veya seçici bulunamadı: {e}')
       browser.close()
       return
 
     soup = BeautifulSoup(html_content, 'html.parser')
 
-    # Sınıf adı aramak yerine doğrudan /film/ içeren tüm bağlantıları akıllıca yakalayalım
-    seen_links = set()
-    movies = []
-
-    for a_tag in soup.find_all('a', href=True):
-      href = a_tag['href']
-      # Film detay linklerinin yapısını yakalıyoruz (içinde /film/ geçenler)
-      if '/film/' in href and href not in seen_links:
-        seen_links.add(href)
-
-        title = a_tag.get('title') or a_tag.text.strip()
-        # Eğer başlık boş geldiyse veya çok kısa ise atlayabiliriz
-        if not title or len(title) < 2:
-          continue
-
-        parent = a_tag.find_parent('div') or a_tag
-        img_tag = parent.find('img') if parent else a_tag.find('img')
-        img_url = ''
-        if img_tag:
-          img_url = (
-              img_tag.get('data-src')
-              or img_tag.get('src')
-              or img_tag.get('data-lazy-src')
-              or ''
-          )
-
-        movies.append({'title': title, 'link': href, 'poster': img_url})
-
-    print(f'Akıllı filtre ile toplam {len(movies)} film bağlantısı bulundu.')
+    # Doğrudan ekranda gördüğümüz doğru yapıya (ul.list içindeki li.film öğelerine) ulaşıyoruz
+    movies = soup.select('ul.list li.film')
+    print(f'Doğru seçici ile toplam {len(movies)} film kutusu bulundu.')
 
     # Test amaçlı ilk 3 filmi işleyelim
-    for movie_info in movies[:3]:
-      title = movie_info['title']
-      link = movie_info['link']
-      img_url = movie_info['poster']
+    for movie in movies[:3]:
+      a_tag = movie.find('a', href=True)
+      if not a_tag:
+        continue
 
-      # Eğer link göreceli (relative) geldiyse tam adrese çevirelim
+      link = a_tag['href']
       if link and not link.startswith('http'):
         link = 'https://www.fullhdfilmizlesene.now' + link
+
+      title = a_tag.get('title') or a_tag.text.strip()
+
+      img_tag = movie.find('img')
+      img_url = ''
+      if img_tag:
+        img_url = (
+            img_tag.get('data-src')
+            or img_tag.get('src')
+            or img_tag.get('data-lazy-src')
+            or ''
+        )
 
       print(f'\nFilm: {title}')
       print(f'Link: {link}')
