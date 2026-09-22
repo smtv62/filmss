@@ -32,28 +32,48 @@ def main():
   movies_data = []
 
   with sync_playwright() as p:
-    browser = p.chromium.launch(headless=True)
-    page = browser.new_page()
+    # Bot korumalarını atlatmak için gerçekçi tarayıcı ayarları ve headless=False (görünür) yapıyoruz
+    browser = p.chromium.launch(
+        headless=False,
+        args=[
+            '--disable-blink-features=AutomationControlled',
+            '--start-maximized',
+        ],
+    )
+
+    # Gerçek bir tarayıcı gibi görünmesi için context ve user-agent tanımlayalım
+    context = browser.new_context(
+        user_agent=(
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,'
+            ' like Gecko) Chrome/122.0.0.0 Safari/537.36'
+        ),
+        viewport={'width': 1920, 'height': 1080},
+    )
+    page = context.new_page()
 
     print('Liste sayfası taranıyor...')
     try:
       page.goto(base_url, timeout=60000)
-      time.sleep(5)  # Sayfanın tam oturması için kısa bir bekleme
+      # İçeriğin ve filmlerin DOM'a basılması için biraz daha uzun bekleyelim
+      print(
+          'Sayfanın yüklenmesi bekleniyor (görsel ekranda gözlenebilir)...'
+      )
+      page.wait_for_selector(
+          'li.film', timeout=15000
+      )  # li.film görünene kadar bekle
       html_content = page.content()
     except Exception as e:
-      print(f'Liste sayfası yüklenemedi: {e}')
+      print(f'Liste sayfası yüklenemedi veya seçici bulunamadı: {e}')
       browser.close()
       return
 
     soup = BeautifulSoup(html_content, 'html.parser')
 
-    # Doğrudan li.film kutularını seçiyoruz
     movies = soup.select('li.film')
-    print(f'Toplam {len(movies)} film kutusu bulundu.')
+    print(f'Başarılı! Toplam {len(movies)} film kutusu bulundu.')
 
     # Test amaçlı ilk 3 filmi işleyelim
     for movie in movies[:3]:
-      # Link ve başlık a.tt etiketinden alınır
       a_tag = movie.find('a', class_='tt')
       if not a_tag:
         continue
@@ -64,7 +84,6 @@ def main():
 
       title = a_tag.text.strip()
 
-      # Afiş resmi li.film içindeki picture veya img etiketinden taranır
       img_tag = movie.find('img')
       img_url = ''
       if img_tag:
