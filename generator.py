@@ -2,7 +2,6 @@ import json
 import time
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
-from playwright_stealth import stealth_sync
 
 
 def get_stream_url_with_page(page, detail_url):
@@ -49,17 +48,30 @@ def main():
             ' (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
         ),
         viewport={'width': 1920, 'height': 1080},
+        locale='tr-TR',
     )
     page = context.new_page()
 
-    # Cloudflare ve bot korumalarını atlatmak için stealth modunu uyguluyoruz
-    stealth_sync(page)
+    # Tarayıcının otomasyon izlerini yerleşik JS enjeksiyonu ile tamamen gizliyoruz
+    page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+            window.navigator.chrome = {
+                runtime: {},
+            };
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['tr-TR', 'tr', 'en-US', 'en'],
+            });
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5],
+            });
+        """)
 
     print('Liste sayfası taranıyor...')
     try:
       page.goto(base_url, timeout=60000)
-      # Cloudflare doğrulamasını geçmesi için biraz daha geniş soluklu bekleyelim
-      time.sleep(6)
+      time.sleep(6)  # Cloudflare kontrolünün geçilmesi için bekleme
 
       page_title = page.title()
       print(f'Gezinilen Sayfa Başlığı: {page_title}')
