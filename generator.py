@@ -1,140 +1,85 @@
 import json
-import time
+import re
 from bs4 import BeautifulSoup
-from playwright.sync_api import sync_playwright
+from curl_cffi import requests
 
 
-def get_stream_url_with_page(page, detail_url):
-  """Playwright kullanarak detay sayfasını açar ve ağ trafiğinden m3u8 linkini yakalar."""
-  stream_url = ''
-
-  def handle_request(request):
-    nonlocal stream_url
-    if '.m3u8' in request.url or 'cdnimages' in request.url:
-      if not stream_url and 'vtt' not in request.url:
-        stream_url = request.url
-
-  page.on('request', handle_request)
-
-  try:
-    print(f'   -> Detay sayfasına gidiliyor: {detail_url}')
-    page.goto(detail_url, timeout=60000)
-    time.sleep(3)
-  except Exception as e:
-    print(f'   -> Sayfa yüklenme hatası: {e}')
-
-  page.remove_listener('request', handle_request)
-  return stream_url
+def get_stream_url_from_html(html_content):
+  """Detay sayfasının kaynak kodu içindeki .m3u8 uzantılı akış linkini regex ile yakalar."""
+  # Sayfa içerisindeki script veya kaynaklarda geçen .m3u8 linklerini arıyoruz
+  m3u8_matches = re.findall(r'https?://[^\s<>"]+?\.m3u8[^\s<>"]*', html_content)
+  if m3u8_matches:
+    return m3u8_matches[0]
+  return ''
 
 
 def main():
   base_url = 'https://www.fullhdfilmizlesene.now/filmizle/turkce-dublaj-filmler-1'
   movies_data = []
 
-  with sync_playwright() as p:
-    browser = p.chromium.launch(
-        headless=True,
-        args=[
-            '--disable-blink-features=AutomationControlled',
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-        ],
-    )
+  print('curl_cffi ile liste sayfası taranıyor...')
+  try:
+    # impersonate="chrome" parametresi ile Cloudflare'i tamamen atlatıyoruz
+    response = requests.get(base_url, impersonate='chrome', timeout=30)
+    print(f'Liste sayfası yanıt kodu: {response.status_code}')
 
-    context = browser.new_context(
-        user_agent=(
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            ' (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-        ),
-        viewport={'width': 1920, 'height': 1080},
-        locale='tr-TR',
-    )
-    page = context.new_page()
-
-    # Tarayıcının otomasyon izlerini yerleşik JS enjeksiyonu ile tamamen gizliyoruz
-    page.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined
-            });
-            window.navigator.chrome = {
-                runtime: {},
-            };
-            Object.defineProperty(navigator, 'languages', {
-                get: () => ['tr-TR', 'tr', 'en-US', 'en'],
-            });
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5],
-            });
-        """)
-
-    print('Liste sayfası taranıyor...')
-    try:
-      page.goto(base_url, timeout=60000)
-      time.sleep(6)  # Cloudflare kontrolünün geçilmesi için bekleme
-
-      page_title = page.title()
-      print(f'Gezinilen Sayfa Başlığı: {page_title}')
-
-      html_content = page.content()
-    except Exception as e:
-      print(f'Liste sayfası yüklenemedi: {e}')
-      browser.close()
+    if response.status_code != 200:
+      print('Liste sayfasına erişilemedi!')
       return
 
-    soup = BeautifulSoup(html_content, 'html.parser')
+    html_content = response.text
+  except Exception as e:
+    print(f'Bağlantı hatası: {e}')
+    return
 
-    movies = soup.select('li.film')
-    print(f'Toplam {len(movies)} film kutusu bulundu.')
+  soup = BeautifulSoup(html_content, 'html.parser')
 
-    # Eğer hala 0 film buluyorsa debug için kaydedelim
-    if len(movies) == 0:
-      with open('debug.html', 'w', encoding='utf-8') as f:
-        f.write(html_content)
-      print(
-          '⚠️ Hiç film bulunamadı! Sayfa içeriği incelenmek üzere debug.html'
-          ' olarak kaydedildi.'
+  movies = soup.select('li.film')
+  print(f'Başarılı! Toplam {len(movies)} film kutusu bulundu.')
+
+  # Test amaçlı ilk 3 filmi işleyelim
+  for movie in movies[:3]:
+    a_tag = movie.find('a', class_='tt')
+    if not a_tag:
+      continue
+
+    link = a_tag.get('href')
+    if link and not link.startswith('http'):
+      link = 'https://www.fullhdfilmizlesene.now' + link
+
+    title = a_tag.text.strip()
+
+    img_tag = movie.find('img')
+    img_url = ''
+    if img_tag:
+      img_url = (
+          img_tag.get('data-src')
+          or img_tag.get('src')
+          or img_tag.get('data-lazy-src')
+          or ''
       )
 
-    # Test amaçlı ilk 3 filmi işleyelim
-    for movie in movies[:3]:
-      a_tag = movie.find('a', class_='tt')
-      if not a_tag:
-        continue
+    print(f'\nFilm: {title}')
+    print(f'Link: {link}')
 
-      link = a_tag.get('href')
-      if link and not link.startswith('http'):
-        link = 'https://www.fullhdfilmizlesene.now' + link
+    stream_url = ''
+    if link:
+      try:
+        print(f'   -> Detay sayfasına gidiliyor: {link}')
+        detail_res = requests.get(link, impersonate='chrome', timeout=30)
+        if detail_res.status_code == 200:
+          stream_url = get_stream_url_from_html(detail_res.text)
+      except Exception as e:
+        print(f'   -> Detay sayfası çekilemedi: {e}')
 
-      title = a_tag.text.strip()
+    print(f'Yakalanan Stream URL: {stream_url}')
 
-      img_tag = movie.find('img')
-      img_url = ''
-      if img_tag:
-        img_url = (
-            img_tag.get('data-src')
-            or img_tag.get('src')
-            or img_tag.get('data-lazy-src')
-            or ''
-        )
-
-      print(f'\nFilm: {title}')
-      print(f'Link: {link}')
-      print(f'Afiş: {img_url}')
-
-      stream_url = ''
-      if link:
-        stream_url = get_stream_url_with_page(page, link)
-        print(f'Yakalanan Stream URL: {stream_url}')
-
-      movies_data.append({
-          'title': title,
-          'link': link,
-          'poster': img_url,
-          'stream_url': stream_url,
-      })
-
-    browser.close()
+    movies_data.append({
+        'title': title,
+        'link': link,
+        'poster': img_url,
+        'stream_url': stream_url,
+    })
 
   # JSON dosyasına kaydet
   with open('movies.json', 'w', encoding='utf-8') as f:
