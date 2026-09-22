@@ -32,16 +32,17 @@ def main():
   movies_data = []
 
   with sync_playwright() as p:
-    # Bot korumalarını atlatmak için gerçekçi tarayıcı ayarları ve headless=False (görünür) yapıyoruz
+    # GitHub Actions sunucularında çalışabilmesi için headless=True yapıyoruz
     browser = p.chromium.launch(
-        headless=False,
+        headless=True,
         args=[
             '--disable-blink-features=AutomationControlled',
-            '--start-maximized',
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
         ],
     )
 
-    # Gerçek bir tarayıcı gibi görünmesi için context ve user-agent tanımlayalım
     context = browser.new_context(
         user_agent=(
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,'
@@ -54,23 +55,17 @@ def main():
     print('Liste sayfası taranıyor...')
     try:
       page.goto(base_url, timeout=60000)
-      # İçeriğin ve filmlerin DOM'a basılması için biraz daha uzun bekleyelim
-      print(
-          'Sayfanın yüklenmesi bekleniyor (görsel ekranda gözlenebilir)...'
-      )
-      page.wait_for_selector(
-          'li.film', timeout=15000
-      )  # li.film görünene kadar bekle
+      time.sleep(5)  # Sayfanın oturması için bekleme
       html_content = page.content()
     except Exception as e:
-      print(f'Liste sayfası yüklenemedi veya seçici bulunamadı: {e}')
+      print(f'Liste sayfası yüklenemedi: {e}')
       browser.close()
       return
 
     soup = BeautifulSoup(html_content, 'html.parser')
 
     movies = soup.select('li.film')
-    print(f'Başarılı! Toplam {len(movies)} film kutusu bulundu.')
+    print(f'Toplam {len(movies)} film kutusu bulundu.')
 
     # Test amaçlı ilk 3 filmi işleyelim
     for movie in movies[:3]:
