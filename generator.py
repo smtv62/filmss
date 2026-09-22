@@ -47,22 +47,24 @@ def main():
 
     soup = BeautifulSoup(html_content, 'html.parser')
 
-    # Doğrudan ekranda gördüğümüz doğru yapıya (ul.list içindeki li.film öğelerine) ulaşıyoruz
+    # Doğrudan ekranda gördüğümüz li.film öğelerini seçiyoruz
     movies = soup.select('ul.list li.film')
     print(f'Doğru seçici ile toplam {len(movies)} film kutusu bulundu.')
 
     # Test amaçlı ilk 3 filmi işleyelim
     for movie in movies[:3]:
-      a_tag = movie.find('a', href=True)
+      # Film linki ve başlığı a.tt içinde
+      a_tag = movie.find('a', class_='tt')
       if not a_tag:
         continue
 
-      link = a_tag['href']
+      link = a_tag.get('href')
       if link and not link.startswith('http'):
         link = 'https://www.fullhdfilmizlesene.now' + link
 
-      title = a_tag.get('title') or a_tag.text.strip()
+      title = a_tag.text.strip()
 
+      # Afiş resmi picture veya img etiketinden alınır
       img_tag = movie.find('img')
       img_url = ''
       if img_tag:
@@ -75,6 +77,7 @@ def main():
 
       print(f'\nFilm: {title}')
       print(f'Link: {link}')
+      print(f'Afiş: {img_url}')
 
       stream_url = ''
       if link:
