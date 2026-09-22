@@ -2,21 +2,14 @@ name: Stream Yakalayici Bot
 
 on:
   schedule:
-    # Çarşamba ve Cuma günleri saat 16:00'da çalışır (UTC saatine göre ayarlanabilir)
     - cron: '0 13 * * 3,5' 
-  workflow_dispatch: # Manuel olarak da tetiklenebilir
+  workflow_dispatch: 
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Bağımlılıkları Yükle
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        playwright install --with-deps
-        
     - name: Depoyu Kopyala (Checkout)
       uses: actions/checkout@v3
 
@@ -29,6 +22,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+        playwright install --with-deps
 
     - name: Botu Çalıştır (Generator)
       run: python generator.py
