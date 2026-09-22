@@ -4,27 +4,40 @@ from bs4 import BeautifulSoup
 from curl_cffi import requests
 
 
-def get_stream_url_from_html(html_content):
-  """Detay sayfasının kaynak kodu içindeki .m3u8 uzantılı akış linkini regex ile yakalar."""
-  # Sayfa içerisindeki script veya kaynaklarda geçen .m3u8 linklerini arıyoruz
-  m3u8_matches = re.findall(r'https?://[^\s<>"]+?\.m3u8[^\s<>"]*', html_content)
-  if m3u8_matches:
-    return m3u8_matches[0]
-  return ''
-
-
 def main():
   base_url = 'https://www.fullhdfilmizlesene.now/filmizle/turkce-dublaj-filmler-1'
   movies_data = []
 
-  print('curl_cffi ile liste sayfası taranıyor...')
+  # Gerçek bir tarayıcının gönderdiği standart başlıklar
+  headers = {
+      'Accept': (
+          'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8'
+      ),
+      'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache',
+      'Referer': 'https://www.fullhdfilmizlesene.now/',
+      'Sec-Ch-Ua': (
+          '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"'
+      ),
+      'Sec-Ch-Ua-Mobile': '?0',
+      'Sec-Ch-Ua-Platform': '"Windows"',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'same-origin',
+      'Sec-Fetch-User': '?1',
+      'Upgrade-Insecure-Requests': '1',
+  }
+
+  print('Genişletilmiş başlıklar ile liste sayfası taranıyor...')
   try:
-    # impersonate="chrome" parametresi ile Cloudflare'i tamamen atlatıyoruz
-    response = requests.get(base_url, impersonate='chrome', timeout=30)
+    response = requests.get(
+        base_url, impersonate='chrome', headers=headers, timeout=30
+    )
     print(f'Liste sayfası yanıt kodu: {response.status_code}')
 
     if response.status_code != 200:
-      print('Liste sayfasına erişilemedi!')
+      print(f'Erişim reddedildi! Sayfa içeriği: {response.text[:200]}')
       return
 
     html_content = response.text
@@ -33,7 +46,6 @@ def main():
     return
 
   soup = BeautifulSoup(html_content, 'html.parser')
-
   movies = soup.select('li.film')
   print(f'Başarılı! Toplam {len(movies)} film kutusu bulundu.')
 
@@ -65,10 +77,15 @@ def main():
     stream_url = ''
     if link:
       try:
-        print(f'   -> Detay sayfasına gidiliyor: {link}')
-        detail_res = requests.get(link, impersonate='chrome', timeout=30)
+        detail_res = requests.get(
+            link, impersonate='chrome', headers=headers, timeout=30
+        )
         if detail_res.status_code == 200:
-          stream_url = get_stream_url_from_html(detail_res.text)
+          m3u8_matches = re.findall(
+              r'https?://[^\s<>"]+?\.m3u8[^\s<>"]*', detail_res.text
+          )
+          if m3u8_matches:
+            stream_url = m3u8_matches[0]
       except Exception as e:
         print(f'   -> Detay sayfası çekilemedi: {e}')
 
@@ -81,7 +98,6 @@ def main():
         'stream_url': stream_url,
     })
 
-  # JSON dosyasına kaydet
   with open('movies.json', 'w', encoding='utf-8') as f:
     json.dump(movies_data, f, ensure_ascii=False, indent=4)
 
