@@ -32,7 +32,6 @@ def main():
   movies_data = []
 
   with sync_playwright() as p:
-    # GitHub Actions sunucularında çalışabilmesi için headless=True yapıyoruz
     browser = p.chromium.launch(
         headless=True,
         args=[
@@ -55,7 +54,14 @@ def main():
     print('Liste sayfası taranıyor...')
     try:
       page.goto(base_url, timeout=60000)
-      time.sleep(5)  # Sayfanın oturması için bekleme
+      # Sayfanın tamamen yüklenmesi için ağ etkinliğinin durulmasını bekleyelim
+      page.wait_for_load_state('domcontentloaded')
+      time.sleep(6)
+
+      # Sayfa başlığını yazdırarak bot korumasına takılıp takılmadığımızı görelim
+      page_title = page.title()
+      print(f'Gezinilen Sayfa Başlığı: {page_title}')
+
       html_content = page.content()
     except Exception as e:
       print(f'Liste sayfası yüklenemedi: {e}')
@@ -66,6 +72,15 @@ def main():
 
     movies = soup.select('li.film')
     print(f'Toplam {len(movies)} film kutusu bulundu.')
+
+    # Eğer hala 0 film buluyorsa, sayfayı debug.html olarak kaydedelim
+    if len(movies) == 0:
+      with open('debug.html', 'w', encoding='utf-8') as f:
+        f.write(html_content)
+      print(
+          '⚠️ Hiç film bulunamadı! Sayfa içeriği incelenmek üzere debug.html'
+          ' olarak kaydedildi.'
+      )
 
     # Test amaçlı ilk 3 filmi işleyelim
     for movie in movies[:3]:
